@@ -1,0 +1,21 @@
+{
+  "name": "job-hunt-bot",
+  "version": "1.0.0",
+  "description": "Telegram bot that automates job search tracking — scrape LinkedIn jobs, log to Google Sheets, get reminders",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js"
+  },
+  "dependencies": {
+    "cheerio": "^1.0.0",
+    "dotenv": "^16.4.5",
+    "googleapis": "^140.0.0",
+    "node-cron": "^3.0.3",
+    "node-telegram-bot-api": "^0.66.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
