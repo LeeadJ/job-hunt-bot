@@ -75,25 +75,26 @@ export async function markApplied(jobId) {
 }
 
 /**
- * Log a job as saved for later (status = "Saved").
+ * Log a job as "Waiting for connection" in the spreadsheet.
  */
-export async function markSaved(jobId) {
+export async function markWaitingConnection(jobId) {
   const job = jobCache.get(jobId);
-  if (!job) throw new Error('Job not in cache');
+  if (!job) throw new Error('Job not in cache — try pasting the URL again');
 
-  await logApplication({
+  const result = await logApplication({
     company: job.company,
     role: job.title,
     seniority: job.seniority,
     location: job.location,
     jobUrl: job.url,
     source: 'LinkedIn',
-    status: 'Saved',
+    status: 'Waiting for connection',
     techStack: job.techStack,
-    notes: 'Saved for later via bot',
+    notes: 'Via Job Hunt Bot',
   });
 
-  return { company: job.company, role: job.title };
+  logger.info('Job logged as waiting for connection', { company: job.company });
+  return result;
 }
 
 /**
