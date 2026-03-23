@@ -15,6 +15,7 @@ You (Telegram)          Cloud                    Google Sheets
 │ buttons  │     │                  │
 └──────────┘     └──────────────────┘
 ```
+![alt text](image.png)
 
 ### How It Works
 
