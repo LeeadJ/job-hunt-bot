@@ -27,8 +27,8 @@ You (Telegram)          Cloud                    Google Sheets
    - Match score (based on your skills)
    - Known contacts at the company
    - "✅ Apply" / "❌ Skip" / "⭐ Save for Later" buttons
-5. **When you tap Apply**: the bot logs it to your Google Sheet and opens the application link
-6. **When you tap Skip**: logged as "Skipped" so you don't see it again
+5. **When you tap Apply**: the bot logs it to your Google Sheet and asks if you already applied — if yes, status is set to "Applied"; if not, the status dropdown stays open for you to update later
+6. **When you tap Skip**: dismissed so you can move on
 
 ### What Gets Automated (saves ~10 min per job)
 - ✅ Scraping job details from LinkedIn URLs
@@ -50,11 +50,11 @@ You (Telegram)          Cloud                    Google Sheets
 | Component        | Technology                | Why                                    |
 |-----------------|---------------------------|----------------------------------------|
 | Bot Framework   | `node-telegram-bot-api`   | Simple, well-documented, async         |
-| Job Scraping    | `puppeteer` + `cheerio`   | LinkedIn needs JS rendering            |
+| Job Scraping    | `fetch` + `cheerio`       | Lightweight, no browser needed         |
 | Google Sheets   | `googleapis` (Sheets v4)  | Native API, no third-party wrapper     |
 | Scheduler       | `node-cron`               | Follow-up reminders, weekly digest     |
 | Runtime         | Node.js 18+               | Matches your backend stack             |
-| Hosting         | Railway / Render / VPS    | Free tier works for this scale         |
+| Hosting         | Fly.io                    | Simple deployment, free tier available  |
 
 ---
 
@@ -188,17 +188,21 @@ job-hunt-bot/
 
 ## Deployment Options
 
-### Option A: Railway (Recommended — Free Tier)
+### Option A: Fly.io (Recommended)
 1. Push to GitHub
-2. Connect repo to [Railway](https://railway.app)
-3. Add env vars in Railway dashboard
-4. Upload `credentials.json` as a secret file
-5. Deploy — it runs 24/7
+2. Install the Fly CLI: `curl -L https://fly.io/install.sh | sh`
+3. `fly launch` — follow the prompts
+4. Set secrets:
+   ```bash
+   fly secrets set TELEGRAM_BOT_TOKEN=your_token
+   fly secrets set TELEGRAM_OWNER_ID=your_id
+   fly secrets set GOOGLE_SHEET_ID=your_sheet_id
+   fly secrets set GOOGLE_CREDENTIALS_BASE64=$(base64 -i credentials.json)
+   ```
+5. `fly deploy` — runs 24/7
+6. Make sure only **1 machine** is running: `fly scale count 1`
 
-### Option B: Render
-Same flow as Railway. Free tier spins down after inactivity but Telegram webhooks wake it up.
-
-### Option C: Your Own VPS
+### Option B: Your Own VPS
 ```bash
 # Use PM2 for process management
 npm install -g pm2

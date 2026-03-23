@@ -3,7 +3,7 @@ import { processJobUrl, markApplied, markSaved, formatJobMessage } from '../serv
 import { getStats, getFollowUpNeeded } from '../sheets/applications.js';
 import { updateCell } from '../sheets/client.js';
 import { searchContacts } from '../sheets/networking.js';
-import { jobActionKeyboard, followUpKeyboard } from './keyboards.js';
+import { jobActionKeyboard, followUpKeyboard, appliedFollowUpKeyboard } from './keyboards.js';
 import { config } from '../utils/config.js';
 import { logger } from '../utils/logger.js';
 
@@ -214,15 +214,22 @@ export function registerHandlers(bot) {
       switch (action) {
         case 'apply': {
           const result = await markApplied(id);
-          await bot.answerCallbackQuery(query.id, { text: '✅ Logged as Applied!' });
+          await bot.answerCallbackQuery(query.id, { text: '✅ Logged to your sheet!' });
 
-          // Update the message to show it was applied
-          const newText = query.message.text + '\n\n✅ *APPLIED* — logged to your sheet';
+          // Update the message to show it was logged
+          const newText = query.message.text + '\n\n📋 *LOGGED* — added to your sheet';
           await bot.editMessageText(newText, {
             chat_id: chatId,
             message_id: messageId,
             parse_mode: 'MarkdownV2',
           }).catch(() => {});
+
+          // Ask follow-up about application status (non-blocking)
+          if (result.rowNumber) {
+            await bot.sendMessage(chatId, '📝 Did you already apply to this position?', {
+              reply_markup: appliedFollowUpKeyboard(result.rowNumber),
+            });
+          }
           break;
         }
 
@@ -280,6 +287,28 @@ export function registerHandlers(bot) {
             query.message.text + '\n\n👻 Marked as Ghosted',
             { chat_id: chatId, message_id: messageId, parse_mode: 'MarkdownV2' }
           ).catch(() => {});
+          break;
+        }
+
+        case 'applied_yes': {
+          const row = parseInt(id);
+          await updateCell(`Applications!I${row}`, 'Applied');
+          await bot.answerCallbackQuery(query.id, { text: '✅ Status set to Applied' });
+          await bot.editMessageText('✅ Status updated to *Applied*', {
+            chat_id: chatId,
+            message_id: messageId,
+            parse_mode: 'MarkdownV2',
+          }).catch(() => {});
+          break;
+        }
+
+        case 'applied_no': {
+          await bot.answerCallbackQuery(query.id, { text: '👍 Got it' });
+          await bot.editMessageText('👍 No worries — update the status when you apply\\.', {
+            chat_id: chatId,
+            message_id: messageId,
+            parse_mode: 'MarkdownV2',
+          }).catch(() => {});
           break;
         }
 

@@ -59,14 +59,19 @@ export async function readRange(range) {
 
 export async function appendRow(sheetName, row) {
   const sheets = await getSheetsClient();
-  await sheets.spreadsheets.values.append({
+  const res = await sheets.spreadsheets.values.append({
     spreadsheetId: config.google.sheetId,
     range: `${sheetName}!A:A`,
     valueInputOption: 'USER_ENTERED',
-    insertDataOption: 'INSERT_ROWS',
+    insertDataOption: 'OVERWRITE',
     requestBody: { values: [row] },
   });
-  logger.info(`Row appended to ${sheetName}`, { company: row[0] });
+  // Extract the row number from the updated range (e.g. "Applications!A5:R5" → 5)
+  const updatedRange = res.data.updates?.updatedRange || '';
+  const match = updatedRange.match(/!A(\d+)/);
+  const rowNumber = match ? parseInt(match[1]) : null;
+  logger.info(`Row appended to ${sheetName}`, { company: row[0], row: rowNumber });
+  return rowNumber;
 }
 
 export async function updateCell(range, value) {

@@ -94,8 +94,8 @@ export async function logApplication({
     notes,
   ];
 
-  await appendRow(SHEET, row);
-  return { company, role, date: today };
+  const rowNumber = await appendRow(SHEET, row);
+  return { company, role, date: today, rowNumber };
 }
 
 /**

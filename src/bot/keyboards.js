@@ -30,6 +30,21 @@ export function followUpKeyboard(sheetRow) {
 }
 
 /**
+ * Build keyboard asking if the user already applied.
+ * @param {number} sheetRow - the row number in the sheet
+ */
+export function appliedFollowUpKeyboard(sheetRow) {
+  return {
+    inline_keyboard: [
+      [
+        { text: '✅ Yes, I applied', callback_data: `applied_yes:${sheetRow}` },
+        { text: '🕐 Not yet', callback_data: `applied_no:${sheetRow}` },
+      ],
+    ],
+  };
+}
+
+/**
  * Simple confirmation keyboard.
  */
 export function confirmKeyboard(action, id) {

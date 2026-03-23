@@ -65,7 +65,7 @@ export async function markApplied(jobId) {
     jobUrl: job.url,
     source: 'LinkedIn',
     referral: job.contacts.length > 0 ? job.contacts[0].name : '-',
-    status: 'Applied',
+    status: '',
     techStack: job.techStack,
     notes: `Via Job Hunt Bot`,
   });
