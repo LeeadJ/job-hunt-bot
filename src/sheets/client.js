@@ -1,19 +1,34 @@
 import { google } from 'googleapis';
-import { readFileSync } from 'fs';
+import { readFileSync, existsSync } from 'fs';
 import { config } from '../utils/config.js';
 import { logger } from '../utils/logger.js';
 
 let sheetsClient = null;
 
-/**
- * Initialize the Google Sheets API client using service account credentials.
- * Caches the client so we only auth once.
- */
+function loadCredentials() {
+  // Priority 1: Base64-encoded env var (for cloud deployment)
+  if (config.google.credentialsBase64) {
+    logger.info('Loading credentials from GOOGLE_CREDENTIALS_BASE64 env var');
+    const json = Buffer.from(config.google.credentialsBase64, 'base64').toString('utf8');
+    return JSON.parse(json);
+  }
+
+  // Priority 2: File on disk (for local development)
+  if (existsSync(config.google.credentialsPath)) {
+    logger.info('Loading credentials from file', { path: config.google.credentialsPath });
+    return JSON.parse(readFileSync(config.google.credentialsPath, 'utf8'));
+  }
+
+  throw new Error(
+    'No Google credentials found. Set GOOGLE_CREDENTIALS_BASE64 env var or place credentials.json in project root.'
+  );
+}
+
 export async function getSheetsClient() {
   if (sheetsClient) return sheetsClient;
 
   try {
-    const credentials = JSON.parse(readFileSync(config.google.credentialsPath, 'utf8'));
+    const credentials = loadCredentials();
 
     const auth = new google.auth.GoogleAuth({
       credentials,
@@ -31,11 +46,6 @@ export async function getSheetsClient() {
   }
 }
 
-/**
- * Read a range from the spreadsheet.
- * @param {string} range - e.g. "Applications!A:R" or "Networking!A1:K100"
- * @returns {string[][]} rows of values
- */
 export async function readRange(range) {
   const sheets = await getSheetsClient();
   const res = await sheets.spreadsheets.values.get({
@@ -47,11 +57,6 @@ export async function readRange(range) {
   return res.data.values || [];
 }
 
-/**
- * Append a row to a sheet.
- * @param {string} sheetName - tab name
- * @param {any[]} row - array of cell values
- */
 export async function appendRow(sheetName, row) {
   const sheets = await getSheetsClient();
   await sheets.spreadsheets.values.append({
@@ -64,11 +69,6 @@ export async function appendRow(sheetName, row) {
   logger.info(`Row appended to ${sheetName}`, { company: row[0] });
 }
 
-/**
- * Update a specific cell.
- * @param {string} range - e.g. "Applications!I5"
- * @param {any} value
- */
 export async function updateCell(range, value) {
   const sheets = await getSheetsClient();
   await sheets.spreadsheets.values.update({
@@ -79,10 +79,7 @@ export async function updateCell(range, value) {
   });
 }
 
-/**
- * Get the number of data rows in a sheet (excluding header).
- */
 export async function getRowCount(sheetName) {
   const rows = await readRange(`${sheetName}!A:A`);
-  return Math.max(0, rows.length - 1); // subtract header
+  return Math.max(0, rows.length - 1);
 }

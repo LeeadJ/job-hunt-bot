@@ -16,6 +16,7 @@ export const config = {
   google: {
     sheetId: required('GOOGLE_SHEET_ID'),
     credentialsPath: optional('GOOGLE_CREDENTIALS_PATH', './credentials.json'),
+    credentialsBase64: optional('GOOGLE_CREDENTIALS_BASE64', ''),
   },
   sheets: {
     applications: optional('SHEET_APPLICATIONS', 'Applications'),
@@ -27,7 +28,7 @@ export const config = {
   },
   reminders: {
     followUpDays: Number(optional('FOLLOWUP_DAYS', '7')),
-    weeklyDigestDay: Number(optional('WEEKLY_DIGEST_DAY', '0')), // 0 = Sunday
+    weeklyDigestDay: Number(optional('WEEKLY_DIGEST_DAY', '0')),
     weeklyDigestHour: Number(optional('WEEKLY_DIGEST_HOUR', '10')),
   },
   rapidApi: {
