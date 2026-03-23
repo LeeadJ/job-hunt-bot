@@ -1,5 +1,5 @@
 import { isLinkedInJobUrl, extractUrls } from '../scraper/linkedin.js';
-import { processJobUrl, markApplied, markSaved, formatJobMessage } from '../services/jobProcessor.js';
+import { processJobUrl, markApplied, markWaitingConnection, formatJobMessage } from '../services/jobProcessor.js';
 import { getStats, getFollowUpNeeded } from '../sheets/applications.js';
 import { updateCell } from '../sheets/client.js';
 import { searchContacts } from '../sheets/networking.js';
@@ -17,6 +17,12 @@ function isOwner(msg) {
 function isOwnerCallback(query) {
   return query.from?.id === config.telegram.ownerId;
 }
+
+// Track chats waiting for connection details: chatId → { rowNumber, company }
+const pendingConnection = new Map();
+
+// Track jobIds that have already been logged to prevent duplicate rows
+const loggedJobs = new Set();
 
 /**
  * Register all message and callback handlers on the bot instance.
@@ -167,6 +173,22 @@ export function registerHandlers(bot) {
     if (!msg.text) return;
     if (msg.text.startsWith('/')) return; // skip commands
 
+    // Check if we're waiting for connection details from this chat
+    if (pendingConnection.has(msg.chat.id)) {
+      const { rowNumber, company } = pendingConnection.get(msg.chat.id);
+      pendingConnection.delete(msg.chat.id);
+
+      const contactInfo = msg.text.trim();
+      try {
+        await updateCell(`Applications!H${rowNumber}`, contactInfo);
+        bot.sendMessage(msg.chat.id, `✅ Contact saved for ${company}`);
+      } catch (err) {
+        logger.error('Failed to save connection details', { error: err.message });
+        bot.sendMessage(msg.chat.id, '❌ Failed to save contact details.');
+      }
+      return;
+    }
+
     const urls = extractUrls(msg.text);
     if (urls.length === 0) return; // not a LinkedIn URL
 
@@ -212,19 +234,24 @@ export function registerHandlers(bot) {
 
     try {
       switch (action) {
-        case 'apply': {
+        case 'add': {
+          // Prevent duplicate rows
+          if (loggedJobs.has(id)) {
+            await bot.answerCallbackQuery(query.id, { text: '⚠️ Already logged this job' });
+            return;
+          }
+
           const result = await markApplied(id);
+          loggedJobs.add(id);
           await bot.answerCallbackQuery(query.id, { text: '✅ Logged to your sheet!' });
 
-          // Update the message to show it was logged
-          const newText = query.message.text + '\n\n📋 *LOGGED* — added to your sheet';
-          await bot.editMessageText(newText, {
-            chat_id: chatId,
-            message_id: messageId,
-            parse_mode: 'MarkdownV2',
-          }).catch(() => {});
+          // Remove buttons from job card
+          await bot.editMessageReplyMarkup(
+            { inline_keyboard: [] },
+            { chat_id: chatId, message_id: messageId },
+          ).catch(() => {});
 
-          // Ask follow-up about application status (non-blocking)
+          // Ask follow-up about application status
           if (result.rowNumber) {
             await bot.sendMessage(chatId, '📝 Did you already apply to this position?', {
               reply_markup: appliedFollowUpKeyboard(result.rowNumber),
@@ -235,24 +262,41 @@ export function registerHandlers(bot) {
 
         case 'skip': {
           await bot.answerCallbackQuery(query.id, { text: '❌ Skipped' });
-          const newText = query.message.text + '\n\n❌ *SKIPPED*';
-          await bot.editMessageText(newText, {
-            chat_id: chatId,
-            message_id: messageId,
-            parse_mode: 'MarkdownV2',
-          }).catch(() => {});
+          // Just remove buttons — no row added
+          await bot.editMessageReplyMarkup(
+            { inline_keyboard: [] },
+            { chat_id: chatId, message_id: messageId },
+          ).catch(() => {});
           break;
         }
 
-        case 'save': {
-          const result = await markSaved(id);
-          await bot.answerCallbackQuery(query.id, { text: '⭐ Saved for later!' });
-          const newText = query.message.text + '\n\n⭐ *SAVED* for later';
-          await bot.editMessageText(newText, {
-            chat_id: chatId,
-            message_id: messageId,
-            parse_mode: 'MarkdownV2',
-          }).catch(() => {});
+        case 'connection': {
+          // Prevent duplicate rows
+          if (loggedJobs.has(id)) {
+            await bot.answerCallbackQuery(query.id, { text: '⚠️ Already logged this job' });
+            return;
+          }
+
+          const result = await markWaitingConnection(id);
+          loggedJobs.add(id);
+          await bot.answerCallbackQuery(query.id, { text: '🤝 Logged as waiting for connection' });
+
+          // Remove buttons from job card
+          await bot.editMessageReplyMarkup(
+            { inline_keyboard: [] },
+            { chat_id: chatId, message_id: messageId },
+          ).catch(() => {});
+
+          // Ask for connection details (non-blocking — user can ignore)
+          if (result.rowNumber) {
+            pendingConnection.set(chatId, {
+              rowNumber: result.rowNumber,
+              company: result.company,
+            });
+            await bot.sendMessage(chatId,
+              '👤 Who\'s your connection? Send their name or LinkedIn profile URL.\n\nYou can skip this — just send a job link instead.',
+            );
+          }
           break;
         }
 
@@ -262,18 +306,18 @@ export function registerHandlers(bot) {
           await updateCell(`Applications!L${row}`, today);
           await updateCell(`Applications!K${row}`, 'Waiting for response');
           await bot.answerCallbackQuery(query.id, { text: '✅ Follow-up logged!' });
-          await bot.editMessageText(
-            query.message.text + `\n\n✅ Followed up on ${today}`,
-            { chat_id: chatId, message_id: messageId, parse_mode: 'MarkdownV2' }
+          await bot.editMessageReplyMarkup(
+            { inline_keyboard: [] },
+            { chat_id: chatId, message_id: messageId },
           ).catch(() => {});
           break;
         }
 
         case 'snooze': {
           await bot.answerCallbackQuery(query.id, { text: '😴 Snoozed for 3 days' });
-          await bot.editMessageText(
-            query.message.text + '\n\n😴 Snoozed — will remind again in 3 days',
-            { chat_id: chatId, message_id: messageId, parse_mode: 'MarkdownV2' }
+          await bot.editMessageReplyMarkup(
+            { inline_keyboard: [] },
+            { chat_id: chatId, message_id: messageId },
           ).catch(() => {});
           break;
         }
@@ -283,9 +327,9 @@ export function registerHandlers(bot) {
           await updateCell(`Applications!I${row}`, 'Ghosted');
           await updateCell(`Applications!M${row}`, 'No Response');
           await bot.answerCallbackQuery(query.id, { text: '👻 Marked as Ghosted' });
-          await bot.editMessageText(
-            query.message.text + '\n\n👻 Marked as Ghosted',
-            { chat_id: chatId, message_id: messageId, parse_mode: 'MarkdownV2' }
+          await bot.editMessageReplyMarkup(
+            { inline_keyboard: [] },
+            { chat_id: chatId, message_id: messageId },
           ).catch(() => {});
           break;
         }
@@ -294,21 +338,19 @@ export function registerHandlers(bot) {
           const row = parseInt(id);
           await updateCell(`Applications!I${row}`, 'Applied');
           await bot.answerCallbackQuery(query.id, { text: '✅ Status set to Applied' });
-          await bot.editMessageText('✅ Status updated to *Applied*', {
-            chat_id: chatId,
-            message_id: messageId,
-            parse_mode: 'MarkdownV2',
-          }).catch(() => {});
+          await bot.editMessageReplyMarkup(
+            { inline_keyboard: [] },
+            { chat_id: chatId, message_id: messageId },
+          ).catch(() => {});
           break;
         }
 
         case 'applied_no': {
           await bot.answerCallbackQuery(query.id, { text: '👍 Got it' });
-          await bot.editMessageText('👍 No worries — update the status when you apply\\.', {
-            chat_id: chatId,
-            message_id: messageId,
-            parse_mode: 'MarkdownV2',
-          }).catch(() => {});
+          await bot.editMessageReplyMarkup(
+            { inline_keyboard: [] },
+            { chat_id: chatId, message_id: messageId },
+          ).catch(() => {});
           break;
         }
 
