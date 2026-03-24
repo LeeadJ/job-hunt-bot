@@ -77,7 +77,7 @@ export async function markApplied(jobId) {
 /**
  * Log a job as "Waiting for connection" in the spreadsheet.
  */
-export async function markWaitingConnection(jobId) {
+export async function markWaitingForConnection(jobId) {
   const job = jobCache.get(jobId);
   if (!job) throw new Error('Job not in cache — try pasting the URL again');
 
@@ -88,12 +88,13 @@ export async function markWaitingConnection(jobId) {
     location: job.location,
     jobUrl: job.url,
     source: 'LinkedIn',
+    referral: '-',
     status: 'Waiting for connection',
     techStack: job.techStack,
     notes: 'Via Job Hunt Bot',
   });
 
-  logger.info('Job logged as waiting for connection', { company: job.company });
+  logger.info('Job logged as waiting for connection', { company: job.company, role: job.title });
   return result;
 }
 

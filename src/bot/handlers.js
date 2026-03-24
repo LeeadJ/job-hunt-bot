@@ -1,11 +1,18 @@
-import { isLinkedInJobUrl, extractUrls } from '../scraper/linkedin.js';
-import { processJobUrl, markApplied, markWaitingConnection, formatJobMessage } from '../services/jobProcessor.js';
+import { extractUrls } from '../scraper/linkedin.js';
+import { processJobUrl, markApplied, markWaitingForConnection, formatJobMessage } from '../services/jobProcessor.js';
 import { getStats, getFollowUpNeeded } from '../sheets/applications.js';
 import { updateCell } from '../sheets/client.js';
 import { searchContacts } from '../sheets/networking.js';
-import { jobActionKeyboard, followUpKeyboard, appliedFollowUpKeyboard } from './keyboards.js';
+import { jobActionKeyboard, followUpKeyboard, appliedFollowUpKeyboard, connectionPromptKeyboard } from './keyboards.js';
 import { config } from '../utils/config.js';
 import { logger } from '../utils/logger.js';
+
+// Track connection flow state per user
+// Key: chatId, Value: { rowNumber, connectionCount, connections[], pendingUrl? }
+const connectionState = new Map();
+
+// Track jobIds that have already been logged to prevent duplicate rows
+const loggedJobs = new Set();
 
 /**
  * Guard: only allow the bot owner to use the bot.
@@ -18,16 +25,20 @@ function isOwnerCallback(query) {
   return query.from?.id === config.telegram.ownerId;
 }
 
-// Track chats waiting for connection details: chatId → { rowNumber, company }
-const pendingConnection = new Map();
-
-// Track jobIds that have already been logged to prevent duplicate rows
-const loggedJobs = new Set();
-
 /**
  * Register all message and callback handlers on the bot instance.
  */
 export function registerHandlers(bot) {
+  // ─── Set bot commands (shows menu button in Telegram) ───
+  bot.setMyCommands([
+    { command: 'start', description: 'Start the bot' },
+    { command: 'stats', description: 'Your search stats' },
+    { command: 'remind', description: 'Jobs needing follow-up' },
+    { command: 'weekly', description: 'Full weekly digest' },
+    { command: 'contacts', description: 'Search your network' },
+    { command: 'help', description: 'All commands' },
+  ]).catch((err) => logger.warn('Failed to set bot commands', { error: err.message }));
+
   // ─── /start ─────────────────────────────────────────────
   bot.onText(/\/start/, (msg) => {
     if (!isOwner(msg)) return;
@@ -173,18 +184,54 @@ export function registerHandlers(bot) {
     if (!msg.text) return;
     if (msg.text.startsWith('/')) return; // skip commands
 
-    // Check if we're waiting for connection details from this chat
-    if (pendingConnection.has(msg.chat.id)) {
-      const { rowNumber, company } = pendingConnection.get(msg.chat.id);
-      pendingConnection.delete(msg.chat.id);
+    // ── Connection flow: intercept text input ──
+    const state = connectionState.get(msg.chat.id);
+    if (state) {
+      const input = msg.text.trim();
+      const isUrl = /^https?:\/\//i.test(input);
 
-      const contactInfo = msg.text.trim();
-      try {
-        await updateCell(`Applications!H${rowNumber}`, contactInfo);
-        bot.sendMessage(msg.chat.id, `✅ Contact saved for ${company}`);
-      } catch (err) {
-        logger.error('Failed to save connection details', { error: err.message });
-        bot.sendMessage(msg.chat.id, '❌ Failed to save contact details.');
+      if (state.pendingUrl) {
+        // User is providing the name for a previously sent URL
+        const name = input;
+        const url = state.pendingUrl;
+        state.connections.push({ name, url });
+        state.pendingUrl = null;
+
+        // Update column H in sheet
+        await updateConnectionsInSheet(state);
+
+        state.connectionCount++;
+        await bot.sendMessage(
+          msg.chat.id,
+          `✅ Added *${escMd(name)}*\n\n👤 *Connection ${state.connectionCount}:* Send a name or profile link`,
+          {
+            parse_mode: 'MarkdownV2',
+            reply_markup: connectionPromptKeyboard(state.rowNumber),
+          }
+        );
+      } else if (isUrl) {
+        // User sent a URL — ask for the connection's name
+        state.pendingUrl = input;
+        await bot.sendMessage(
+          msg.chat.id,
+          "👤 What's this connection's name?",
+        );
+      } else {
+        // User sent a plain name
+        state.connections.push({ name: input, url: null });
+
+        // Update column H in sheet
+        await updateConnectionsInSheet(state);
+
+        state.connectionCount++;
+        await bot.sendMessage(
+          msg.chat.id,
+          `✅ Added *${escMd(input)}*\n\n👤 *Connection ${state.connectionCount}:* Send a name or profile link`,
+          {
+            parse_mode: 'MarkdownV2',
+            reply_markup: connectionPromptKeyboard(state.rowNumber),
+          }
+        );
       }
       return;
     }
@@ -270,16 +317,16 @@ export function registerHandlers(bot) {
           break;
         }
 
-        case 'connection': {
+        case 'waitconn': {
           // Prevent duplicate rows
           if (loggedJobs.has(id)) {
             await bot.answerCallbackQuery(query.id, { text: '⚠️ Already logged this job' });
             return;
           }
 
-          const result = await markWaitingConnection(id);
+          const result = await markWaitingForConnection(id);
           loggedJobs.add(id);
-          await bot.answerCallbackQuery(query.id, { text: '🤝 Logged as waiting for connection' });
+          await bot.answerCallbackQuery(query.id, { text: '🤝 Logged — now add connections' });
 
           // Remove buttons from job card
           await bot.editMessageReplyMarkup(
@@ -287,15 +334,41 @@ export function registerHandlers(bot) {
             { chat_id: chatId, message_id: messageId },
           ).catch(() => {});
 
-          // Ask for connection details (non-blocking — user can ignore)
-          if (result.rowNumber) {
-            pendingConnection.set(chatId, {
-              rowNumber: result.rowNumber,
-              company: result.company,
-            });
-            await bot.sendMessage(chatId,
-              '👤 Who\'s your connection? Send their name or LinkedIn profile URL.\n\nYou can skip this — just send a job link instead.',
-            );
+          // Start connection flow
+          connectionState.set(chatId, {
+            rowNumber: result.rowNumber,
+            connectionCount: 1,
+            connections: [],
+            pendingUrl: null,
+          });
+
+          await bot.sendMessage(
+            chatId,
+            '👤 *Connection 1:* Send a name or profile link',
+            {
+              parse_mode: 'MarkdownV2',
+              reply_markup: connectionPromptKeyboard(result.rowNumber),
+            }
+          );
+          break;
+        }
+
+        case 'conn_skip': {
+          const state = connectionState.get(chatId);
+          connectionState.delete(chatId);
+
+          if (state && state.connections.length > 0) {
+            await bot.answerCallbackQuery(query.id, { text: `✅ ${state.connections.length} connection(s) saved` });
+            await bot.editMessageText(
+              `✅ ${state.connections.length} connection\\(s\\) added to the sheet`,
+              { chat_id: chatId, message_id: messageId, parse_mode: 'MarkdownV2' }
+            ).catch(() => {});
+          } else {
+            await bot.answerCallbackQuery(query.id, { text: '⏭️ Skipped' });
+            await bot.editMessageText(
+              '⏭️ No connections added',
+              { chat_id: chatId, message_id: messageId }
+            ).catch(() => {});
           }
           break;
         }
@@ -389,4 +462,26 @@ function escMd(text) {
 
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Update column H (Referral Contact) with the current list of connections.
+ * Names with URLs become hyperlinks, plain names stay as text.
+ */
+async function updateConnectionsInSheet(state) {
+  // If there's a single connection with a URL, use HYPERLINK formula directly
+  // Otherwise, use plain text with dash-separated lines
+  let value;
+  if (state.connections.length === 1 && state.connections[0].url) {
+    value = `=HYPERLINK("${state.connections[0].url}","${state.connections[0].name}")`;
+  } else {
+    value = state.connections.map((c) => {
+      if (c.url) {
+        return `- ${c.name} (${c.url})`;
+      }
+      return `- ${c.name}`;
+    }).join('\n');
+  }
+
+  await updateCell(`Applications!H${state.rowNumber}`, value);
 }

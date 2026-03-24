@@ -1,3 +1,4 @@
+import http from 'node:http';
 import TelegramBot from 'node-telegram-bot-api';
 import { config } from './utils/config.js';
 import { logger } from './utils/logger.js';
@@ -52,6 +53,17 @@ async function main() {
 
   process.on('SIGINT', () => shutdown('SIGINT'));
   process.on('SIGTERM', () => shutdown('SIGTERM'));
+
+  // ── 7. Health-check server for Fly.io ────────────────
+  if (process.env.NODE_ENV === 'production') {
+    const port = process.env.PORT || 3000;
+    http.createServer((req, res) => {
+      res.writeHead(200);
+      res.end('ok');
+    }).listen(port, () => {
+      logger.info(`Health-check server listening on port ${port}`);
+    });
+  }
 
   logger.info('🚀 Bot is running. Waiting for messages...');
 }

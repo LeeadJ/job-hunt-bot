@@ -8,7 +8,7 @@ export function jobActionKeyboard(jobId) {
       [
         { text: '✅ Add', callback_data: `add:${jobId}` },
         { text: '❌ Skip', callback_data: `skip:${jobId}` },
-        { text: '🤝 Waiting for connection', callback_data: `connection:${jobId}` },
+        { text: '🤝 Waiting for connection', callback_data: `waitconn:${jobId}` },
       ],
     ],
   };
@@ -39,6 +39,20 @@ export function appliedFollowUpKeyboard(sheetRow) {
       [
         { text: '✅ Yes, I applied', callback_data: `applied_yes:${sheetRow}` },
         { text: '🕐 Not yet', callback_data: `applied_no:${sheetRow}` },
+      ],
+    ],
+  };
+}
+
+/**
+ * Build keyboard for the connection prompt flow.
+ * @param {number} rowNumber - sheet row for callback data
+ */
+export function connectionPromptKeyboard(rowNumber) {
+  return {
+    inline_keyboard: [
+      [
+        { text: '⏭️ Skip', callback_data: `conn_skip:${rowNumber}` },
       ],
     ],
   };
