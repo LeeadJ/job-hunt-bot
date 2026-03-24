@@ -14,16 +14,17 @@ const COL = {
   JOB_LINK: 5,     // F
   SOURCE: 6,       // G
   REFERRAL: 7,     // H
-  STATUS: 8,       // I
-  STAGE: 9,        // J
-  NEXT_ACTION: 10, // K
-  FOLLOWUP: 11,    // L
-  REJ_REASON: 12,  // M
-  DAYS_SINCE: 13,  // N (formula)
-  SALARY: 14,      // O
-  TECH_STACK: 15,  // P
-  COMPANY_SIZE: 16,// Q
-  NOTES: 17,       // R
+  REFERRAL_MSG: 8, // I
+  STATUS: 9,       // J
+  STAGE: 10,       // K
+  NEXT_ACTION: 11, // L
+  FOLLOWUP: 12,    // M
+  REJ_REASON: 13,  // N
+  DAYS_SINCE: 14,  // O (formula)
+  SALARY: 15,      // P
+  TECH_STACK: 16,  // Q
+  COMPANY_SIZE: 17,// R
+  NOTES: 18,       // S
 };
 
 /**
@@ -82,6 +83,7 @@ export async function logApplication({
     jobUrl,
     source,
     referral,
+    '',          // Referral Message
     status,
     '',          // Interview Stage
     'Wait for response', // Next Action

@@ -190,12 +190,11 @@ export function registerHandlers(bot) {
       const input = msg.text.trim();
       const isUrl = /^https?:\/\//i.test(input);
 
-      if (state.pendingUrl) {
-        // User is providing the name for a previously sent URL
-        const name = input;
-        const url = state.pendingUrl;
-        state.connections.push({ name, url });
-        state.pendingUrl = null;
+      if (isUrl) {
+        // Try to extract name from LinkedIn profile URL
+        const extractedName = extractNameFromLinkedInUrl(input);
+        const name = extractedName || input;
+        state.connections.push({ name: extractedName || name, url: input });
 
         // Update column H in sheet
         await updateConnectionsInSheet(state);
@@ -208,13 +207,6 @@ export function registerHandlers(bot) {
             parse_mode: 'MarkdownV2',
             reply_markup: connectionPromptKeyboard(state.rowNumber),
           }
-        );
-      } else if (isUrl) {
-        // User sent a URL — ask for the connection's name
-        state.pendingUrl = input;
-        await bot.sendMessage(
-          msg.chat.id,
-          "👤 What's this connection's name?",
         );
       } else {
         // User sent a plain name
@@ -334,6 +326,11 @@ export function registerHandlers(bot) {
             { chat_id: chatId, message_id: messageId },
           ).catch(() => {});
 
+          // Write referral message template — clean the URL to remove tracking params
+          const cleanUrl = result.jobUrl.replace(/[?#].*$/, '');
+          const referralMsg = `הי מה קורה? שמי ליעד, אני מפתח Backend וראיתי משרה אצלך בחברה שמעניינת אותי. אשמח לשלוח דרכך קו״ח. מעריך מאוד🙏 ${cleanUrl}`;
+          await updateCell(`Applications!I${result.rowNumber}`, referralMsg);
+
           // Start connection flow
           connectionState.set(chatId, {
             rowNumber: result.rowNumber,
@@ -376,8 +373,8 @@ export function registerHandlers(bot) {
         case 'followedup': {
           const row = parseInt(id);
           const today = new Date().toLocaleDateString('en-GB');
-          await updateCell(`Applications!L${row}`, today);
-          await updateCell(`Applications!K${row}`, 'Waiting for response');
+          await updateCell(`Applications!M${row}`, today);
+          await updateCell(`Applications!L${row}`, 'Waiting for response');
           await bot.answerCallbackQuery(query.id, { text: '✅ Follow-up logged!' });
           await bot.editMessageReplyMarkup(
             { inline_keyboard: [] },
@@ -397,8 +394,8 @@ export function registerHandlers(bot) {
 
         case 'ghosted': {
           const row = parseInt(id);
-          await updateCell(`Applications!I${row}`, 'Ghosted');
-          await updateCell(`Applications!M${row}`, 'No Response');
+          await updateCell(`Applications!J${row}`, 'Ghosted');
+          await updateCell(`Applications!N${row}`, 'No Response');
           await bot.answerCallbackQuery(query.id, { text: '👻 Marked as Ghosted' });
           await bot.editMessageReplyMarkup(
             { inline_keyboard: [] },
@@ -409,7 +406,7 @@ export function registerHandlers(bot) {
 
         case 'applied_yes': {
           const row = parseInt(id);
-          await updateCell(`Applications!I${row}`, 'Applied');
+          await updateCell(`Applications!J${row}`, 'Applied');
           await bot.answerCallbackQuery(query.id, { text: '✅ Status set to Applied' });
           await bot.editMessageReplyMarkup(
             { inline_keyboard: [] },
@@ -465,22 +462,35 @@ function delay(ms) {
 }
 
 /**
+ * Extract a person's name from a LinkedIn profile URL.
+ * e.g. https://www.linkedin.com/in/michal-fingerut/ → "Michal Fingerut"
+ */
+function extractNameFromLinkedInUrl(url) {
+  const match = url.match(/linkedin\.com\/in\/([^/?#]+)/);
+  if (!match) return null;
+  return match[1]
+    .replace(/\/$/, '')
+    .split('-')
+    .filter((w) => !/^\d+$/.test(w)) // remove numeric ID suffixes
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
+}
+
+/**
  * Update column H (Referral Contact) with the current list of connections.
  * Names with URLs become hyperlinks, plain names stay as text.
  */
 async function updateConnectionsInSheet(state) {
-  // If there's a single connection with a URL, use HYPERLINK formula directly
-  // Otherwise, use plain text with dash-separated lines
   let value;
+
   if (state.connections.length === 1 && state.connections[0].url) {
+    // Single connection with URL — clickable hyperlink
     value = `=HYPERLINK("${state.connections[0].url}","${state.connections[0].name}")`;
   } else {
+    // Multiple connections — plain text, each on its own line
     value = state.connections.map((c) => {
-      if (c.url) {
-        return `- ${c.name} (${c.url})`;
-      }
-      return `- ${c.name}`;
-    }).join('\n');
+      return c.url ? `- ${c.name}\n  ${c.url}` : `- ${c.name}`;
+    }).join('\n\n');
   }
 
   await updateCell(`Applications!H${state.rowNumber}`, value);

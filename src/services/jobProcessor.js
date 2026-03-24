@@ -95,7 +95,7 @@ export async function markWaitingForConnection(jobId) {
   });
 
   logger.info('Job logged as waiting for connection', { company: job.company, role: job.title });
-  return result;
+  return { ...result, jobUrl: job.url };
 }
 
 /**
