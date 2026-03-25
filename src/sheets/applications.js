@@ -11,20 +11,21 @@ const COL = {
   SENIORITY: 2,    // C
   LOCATION: 3,     // D
   DATE_APPLIED: 4, // E
-  JOB_LINK: 5,     // F
-  SOURCE: 6,       // G
-  REFERRAL: 7,     // H
-  REFERRAL_MSG: 8, // I
-  STATUS: 9,       // J
-  STAGE: 10,       // K
-  NEXT_ACTION: 11, // L
-  FOLLOWUP: 12,    // M
-  REJ_REASON: 13,  // N
-  DAYS_SINCE: 14,  // O (formula)
-  SALARY: 15,      // P
-  TECH_STACK: 16,  // Q
-  COMPANY_SIZE: 17,// R
-  NOTES: 18,       // S
+  APPLICANTS: 5,   // F
+  JOB_LINK: 6,     // G
+  SOURCE: 7,       // H
+  REFERRAL: 8,     // I
+  REFERRAL_MSG: 9, // J
+  STATUS: 10,      // K
+  STAGE: 11,       // L
+  NEXT_ACTION: 12, // M
+  FOLLOWUP: 13,    // N
+  REJ_REASON: 14,  // O
+  DAYS_SINCE: 15,  // P (formula)
+  SALARY: 16,      // Q
+  TECH_STACK: 17,  // R
+  COMPANY_SIZE: 18,// S
+  NOTES: 19,       // T
 };
 
 /**
@@ -33,7 +34,7 @@ const COL = {
  */
 export async function isDuplicate(jobUrl, company, role) {
   try {
-    const rows = await readRange(`${SHEET}!A2:F1000`);
+    const rows = await readRange(`${SHEET}!A2:G1000`);
 
     for (const row of rows) {
       // Check by URL (most reliable)
@@ -80,6 +81,7 @@ export async function logApplication({
     seniority,
     location,
     today,
+    '',          // Applicants (manual)
     jobUrl,
     source,
     referral,
@@ -104,7 +106,7 @@ export async function logApplication({
  * Get stats for the dashboard / weekly digest.
  */
 export async function getStats() {
-  const rows = await readRange(`${SHEET}!A2:N1000`);
+  const rows = await readRange(`${SHEET}!A2:O1000`);
   const dataRows = rows.filter((r) => r[COL.COMPANY]); // non-empty rows
 
   const total = dataRows.length;
@@ -164,7 +166,7 @@ export async function getStats() {
  * Get jobs that need follow-up (applied > N days ago, still "Applied" status).
  */
 export async function getFollowUpNeeded(days = 7) {
-  const rows = await readRange(`${SHEET}!A2:N1000`);
+  const rows = await readRange(`${SHEET}!A2:O1000`);
   const now = new Date();
   const needFollowUp = [];
 

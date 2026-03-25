@@ -31,14 +31,14 @@ export function extractJobId(url) {
  */
 export function isLinkedInJobUrl(text) {
   return /linkedin\.com\/jobs\/view\//.test(text) ||
-         /linkedin\.com\/jobs\/search\/.*currentJobId=/.test(text);
+         /linkedin\.com\/jobs\/(?:search|collections)\/.*currentJobId=/.test(text);
 }
 
 /**
  * Extract all LinkedIn job URLs from a message (supports bulk paste).
  */
 export function extractUrls(text) {
-  const urlRegex = /https?:\/\/(?:www\.)?linkedin\.com\/jobs\/(?:view|search)[^\s)>\]"]*/gi;
+  const urlRegex = /https?:\/\/(?:www\.)?linkedin\.com\/jobs\/(?:view|search|collections)[^\s)>\]"]*/gi;
   return [...new Set(text.match(urlRegex) || [])];
 }
 
@@ -157,13 +157,20 @@ async function scrapeViaFetch(url) {
 
     const techStack = extractTechStack(description);
 
+    // Extract experience years from full description and append to seniority
+    const years = extractExperienceYears(description);
+    const seniorityWithYears = years ? `${seniority} (${years})` : seniority;
+
+    // Clean location — remove applicant text if it leaked in
+    const cleanLocation = cleanText(location).replace(/\d+\s*applicants?/i, '').trim().replace(/,\s*$/, '');
+
     await delay(config.scraping.delayMs);
 
     return {
       title: cleanText(title) || 'Unknown Role',
       company: cleanText(company) || 'Unknown Company',
-      location: cleanText(location),
-      seniority,
+      location: cleanLocation,
+      seniority: seniorityWithYears,
       description: description.slice(0, 500),
       criteria,
       techStack,
@@ -197,14 +204,18 @@ async function scrapeViaApi(url) {
 
   const data = await response.json();
 
+  const desc = data.description || '';
+  const seniority = data.seniorityLevel || extractSeniorityFromTitle(data.title || '');
+  const years = extractExperienceYears(desc);
+
   return {
     title: data.title || 'Unknown Role',
     company: data.company?.name || 'Unknown Company',
     location: data.location || '',
-    seniority: data.seniorityLevel || extractSeniorityFromTitle(data.title || ''),
-    description: (data.description || '').slice(0, 500),
+    seniority: years ? `${seniority} (${years})` : seniority,
+    description: desc.slice(0, 500),
     criteria: [],
-    techStack: extractTechStack(data.description || ''),
+    techStack: extractTechStack(desc),
     url,
     scrapedAt: new Date().toISOString(),
   };
@@ -253,6 +264,26 @@ function extractTechStack(description) {
   );
 
   return found.join(', ');
+}
+
+/**
+ * Extract experience years from job description.
+ * e.g. "At least 3 years" → "+3", "3-5 years" → "3-5"
+ */
+function extractExperienceYears(description) {
+  const patterns = [
+    { re: /(\d+)\s*[-–]\s*(\d+)\s*\+?\s*years?\b/i, fmt: (m) => `${m[1]}-${m[2]}` },
+    { re: /at\s+least\s+(\d+)\s*years?\b/i, fmt: (m) => `+${m[1]}` },
+    { re: /minimum\s+(?:of\s+)?(\d+)\s*years?\b/i, fmt: (m) => `+${m[1]}` },
+    { re: /(\d+)\s*\+\s*years?\b/i, fmt: (m) => `+${m[1]}` },
+    { re: /(\d+)\s+(?:or\s+more\s+)?years?\s+(?:of\s+)?(?:experience|exp)\b/i, fmt: (m) => `+${m[1]}` },
+  ];
+
+  for (const { re, fmt } of patterns) {
+    const match = description.match(re);
+    if (match) return fmt(match);
+  }
+  return null;
 }
 
 function cleanText(text) {

@@ -62,6 +62,7 @@ export async function markApplied(jobId) {
     role: job.title,
     seniority: job.seniority,
     location: job.location,
+
     jobUrl: job.url,
     source: 'LinkedIn',
     referral: job.contacts.length > 0 ? job.contacts[0].name : '-',
@@ -86,6 +87,7 @@ export async function markWaitingForConnection(jobId) {
     role: job.title,
     seniority: job.seniority,
     location: job.location,
+
     jobUrl: job.url,
     source: 'LinkedIn',
     referral: '-',

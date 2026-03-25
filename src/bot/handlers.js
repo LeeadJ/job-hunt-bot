@@ -1,7 +1,7 @@
 import { extractUrls } from '../scraper/linkedin.js';
 import { processJobUrl, markApplied, markWaitingForConnection, formatJobMessage } from '../services/jobProcessor.js';
 import { getStats, getFollowUpNeeded } from '../sheets/applications.js';
-import { updateCell } from '../sheets/client.js';
+import { updateCell, formatCompanyCell } from '../sheets/client.js';
 import { searchContacts } from '../sheets/networking.js';
 import { jobActionKeyboard, followUpKeyboard, appliedFollowUpKeyboard, connectionPromptKeyboard } from './keyboards.js';
 import { config } from '../utils/config.js';
@@ -205,7 +205,7 @@ export function registerHandlers(bot) {
           `✅ Added *${escMd(name)}*\n\n👤 *Connection ${state.connectionCount}:* Send a name or profile link`,
           {
             parse_mode: 'MarkdownV2',
-            reply_markup: connectionPromptKeyboard(state.rowNumber),
+            reply_markup: connectionPromptKeyboard(state.rowNumber, true),
           }
         );
       } else {
@@ -221,7 +221,7 @@ export function registerHandlers(bot) {
           `✅ Added *${escMd(input)}*\n\n👤 *Connection ${state.connectionCount}:* Send a name or profile link`,
           {
             parse_mode: 'MarkdownV2',
-            reply_markup: connectionPromptKeyboard(state.rowNumber),
+            reply_markup: connectionPromptKeyboard(state.rowNumber, true),
           }
         );
       }
@@ -284,6 +284,13 @@ export function registerHandlers(bot) {
           loggedJobs.add(id);
           await bot.answerCallbackQuery(query.id, { text: '✅ Logged to your sheet!' });
 
+          // Format company cell (bold, size 14, centered)
+          if (result.rowNumber) {
+            formatCompanyCell('Applications', result.rowNumber).catch((err) =>
+              logger.warn('Failed to format company cell', { error: err.message })
+            );
+          }
+
           // Remove buttons from job card
           await bot.editMessageReplyMarkup(
             { inline_keyboard: [] },
@@ -320,6 +327,13 @@ export function registerHandlers(bot) {
           loggedJobs.add(id);
           await bot.answerCallbackQuery(query.id, { text: '🤝 Logged — now add connections' });
 
+          // Format company cell (bold, size 14, centered)
+          if (result.rowNumber) {
+            formatCompanyCell('Applications', result.rowNumber).catch((err) =>
+              logger.warn('Failed to format company cell', { error: err.message })
+            );
+          }
+
           // Remove buttons from job card
           await bot.editMessageReplyMarkup(
             { inline_keyboard: [] },
@@ -329,7 +343,7 @@ export function registerHandlers(bot) {
           // Write referral message template — clean the URL to remove tracking params
           const cleanUrl = result.jobUrl.replace(/[?#].*$/, '');
           const referralMsg = `הי מה קורה? שמי ליעד, אני מפתח Backend וראיתי משרה אצלך בחברה שמעניינת אותי. אשמח לשלוח דרכך קו״ח. מעריך מאוד🙏 ${cleanUrl}`;
-          await updateCell(`Applications!I${result.rowNumber}`, referralMsg);
+          await updateCell(`Applications!J${result.rowNumber}`, referralMsg);
 
           // Start connection flow
           connectionState.set(chatId, {
@@ -337,6 +351,7 @@ export function registerHandlers(bot) {
             connectionCount: 1,
             connections: [],
             pendingUrl: null,
+            referralMsg,
           });
 
           await bot.sendMessage(
@@ -360,6 +375,13 @@ export function registerHandlers(bot) {
               `✅ ${state.connections.length} connection\\(s\\) added to the sheet`,
               { chat_id: chatId, message_id: messageId, parse_mode: 'MarkdownV2' }
             ).catch(() => {});
+
+            // Send referral message for easy copy-paste
+            if (state.referralMsg) {
+              await bot.sendMessage(chatId, `📋 *Referral message:*\n\n${escMd(state.referralMsg)}`, {
+                parse_mode: 'MarkdownV2',
+              });
+            }
           } else {
             await bot.answerCallbackQuery(query.id, { text: '⏭️ Skipped' });
             await bot.editMessageText(
@@ -373,8 +395,8 @@ export function registerHandlers(bot) {
         case 'followedup': {
           const row = parseInt(id);
           const today = new Date().toLocaleDateString('en-GB');
-          await updateCell(`Applications!M${row}`, today);
-          await updateCell(`Applications!L${row}`, 'Waiting for response');
+          await updateCell(`Applications!N${row}`, today);
+          await updateCell(`Applications!M${row}`, 'Waiting for response');
           await bot.answerCallbackQuery(query.id, { text: '✅ Follow-up logged!' });
           await bot.editMessageReplyMarkup(
             { inline_keyboard: [] },
@@ -394,8 +416,8 @@ export function registerHandlers(bot) {
 
         case 'ghosted': {
           const row = parseInt(id);
-          await updateCell(`Applications!J${row}`, 'Ghosted');
-          await updateCell(`Applications!N${row}`, 'No Response');
+          await updateCell(`Applications!K${row}`, 'Ghosted');
+          await updateCell(`Applications!O${row}`, 'No Response');
           await bot.answerCallbackQuery(query.id, { text: '👻 Marked as Ghosted' });
           await bot.editMessageReplyMarkup(
             { inline_keyboard: [] },
@@ -406,7 +428,7 @@ export function registerHandlers(bot) {
 
         case 'applied_yes': {
           const row = parseInt(id);
-          await updateCell(`Applications!J${row}`, 'Applied');
+          await updateCell(`Applications!K${row}`, 'Applied');
           await bot.answerCallbackQuery(query.id, { text: '✅ Status set to Applied' });
           await bot.editMessageReplyMarkup(
             { inline_keyboard: [] },
@@ -493,5 +515,5 @@ async function updateConnectionsInSheet(state) {
     }).join('\n\n');
   }
 
-  await updateCell(`Applications!H${state.rowNumber}`, value);
+  await updateCell(`Applications!I${state.rowNumber}`, value);
 }

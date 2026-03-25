@@ -84,6 +84,51 @@ export async function updateCell(range, value) {
   });
 }
 
+/**
+ * Format the company cell (column A) as bold, size 14, centered.
+ */
+export async function formatCompanyCell(sheetName, rowNumber) {
+  const sheets = await getSheetsClient();
+
+  // Get the numeric sheet ID for the tab
+  const spreadsheet = await sheets.spreadsheets.get({
+    spreadsheetId: config.google.sheetId,
+    fields: 'sheets.properties',
+  });
+  const sheet = spreadsheet.data.sheets.find(
+    (s) => s.properties.title === sheetName
+  );
+  const sheetId = sheet?.properties?.sheetId || 0;
+
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId: config.google.sheetId,
+    requestBody: {
+      requests: [
+        {
+          repeatCell: {
+            range: {
+              sheetId,
+              startRowIndex: rowNumber - 1,
+              endRowIndex: rowNumber,
+              startColumnIndex: 0,
+              endColumnIndex: 1,
+            },
+            cell: {
+              userEnteredFormat: {
+                textFormat: { bold: true, fontSize: 14 },
+                horizontalAlignment: 'CENTER',
+                verticalAlignment: 'MIDDLE',
+              },
+            },
+            fields:
+              'userEnteredFormat(textFormat,horizontalAlignment,verticalAlignment)',
+          },
+        },
+      ],
+    },
+  });
+}
+
 export async function getRowCount(sheetName) {
   const rows = await readRange(`${sheetName}!A:A`);
   return Math.max(0, rows.length - 1);

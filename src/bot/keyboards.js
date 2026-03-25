@@ -48,11 +48,11 @@ export function appliedFollowUpKeyboard(sheetRow) {
  * Build keyboard for the connection prompt flow.
  * @param {number} rowNumber - sheet row for callback data
  */
-export function connectionPromptKeyboard(rowNumber) {
+export function connectionPromptKeyboard(rowNumber, hasConnections = false) {
   return {
     inline_keyboard: [
       [
-        { text: '⏭️ Skip', callback_data: `conn_skip:${rowNumber}` },
+        { text: hasConnections ? '✅ Done' : '⏭️ Skip', callback_data: `conn_skip:${rowNumber}` },
       ],
     ],
   };
